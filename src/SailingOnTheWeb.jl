@@ -1,6 +1,7 @@
 module SailingOnTheWeb
 
 using DifferentialEquations 
+using SecondOrderODEProblem
 using LinearAlgebra  
 using Interpolations
 using ProgressMeter
@@ -89,10 +90,10 @@ function def_constants()
     ut_o = [0.0; 0.0]
     t_int = 0.0:0.01:120
 
-    return h, m, h, Cᴰ, Cᴸ, r_island, ut_o, t_int, A, h_avg, ρ
+    return h, m, h1, h2, Cᴰ, Cᴸ, r_island, ut_o, t_int, A, h_avg, ρ
 end
 
-function generate_wind(h_avg,r_island)
+function generate_wind(h1,h2,h_avg,r_island)
     # Lets generate some random wind with a weibull distribution and a 
     # power spectral density function provided by Professor Shields
 

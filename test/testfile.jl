@@ -9,10 +9,10 @@ u_o1 = [0.0; -55]
 u_o2 = [0.0; -61.64] 
 
 # Define Constants
-h, m, h, Cᴰ, Cᴸ, r_island, ut_o, t_int, A, h_avg, ρ = def_constants()
+h, m, h1, h2, Cᴰ, Cᴸ, r_island, ut_o, t_int, A, h_avg, ρ = def_constants()
 
 # Calculate/generate wind
-VWx_avg, VWy_avg, VW_avg = generate_wind(h_avg,r_island)
+VWx_avg, VWy_avg, VW_avg = generate_wind(h1,h2,h_avg,r_island)
 
 # Package Constants
 package_1 = [α1_1_lst[1], α1_1_lst, β1_1_lst[1], β1_1_lst, 1, VWx_avg, VWy_avg, m, h, A, Cᴰ, Cᴸ, 0, 0,r_island];
