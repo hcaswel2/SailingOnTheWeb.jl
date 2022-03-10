@@ -1,7 +1,6 @@
 module SailingOnTheWeb
 
 using DifferentialEquations 
-using SecondOrderODEProblem
 using LinearAlgebra  
 using Interpolations
 using ProgressMeter
@@ -10,47 +9,9 @@ using Dierckx
 using QuadGK
 using Distributions, Random
 
-export eq_motion, def_constants, generate_wind, def_callbacks, boatplot, anim_boat
+export eq_motion, def_constants, generate_wind, def_callbacks, boatplot, anim_boat, solve_boating
 
-function eq_motion(utt, ut, u, p, t)
-    
-    α1, α1_lst, β1, β1_lst, corner, VWx, VWy, m, h, w, Cᴰ, Cᴸ, corr_time, time, r_island = p 
-    # I know this is alot... Many are just needed for callbacks
-    
-    V_boat = sqrt(ut[1]^2 + ut[2]^2)
-    
-    γ = atan(VWy(u[1],u[2],t[1])/VWx(u[1],u[2],t[1])) # Angle of aperent wind to the base wind velocity 
-    # (island effects on wind angle)
-    
-    direct = sign(β1 + γ) # track if wind is hitting left side of boat or right side
-    β1 = abs(β1) # Tread both sides the same using the variable "direct" to correct values
-    
-    VA = sqrt((ut[2]-VWy(u[1],u[2],t[1]))^2 + (VWx(u[1],u[2],t[1])-ut[1])^2) #m/s Apparent Wind speed
-    θ = (γ + atan((ut[2]-VWy(u[1],u[2],t[1]))/(VWx(u[1],u[2],t[1])-ut[1])))*direct # Angle between wind and apparent wind
-    β = direct*(β1 - γ) - θ # Angle of boat to apparent wind
-    
-    # Not all diagrams show this resistance done below, so I am not 100% sure this is not taken into account 
-    # with lift and drag coefficients, but without some resistance, the boats 1 & 2 could catch Voyager 1 & 2
-    # https://smalltridesign.com/Trimaran-Articles/Boat-Resistance.html
-    Cs = 0.11
-    Sp = (h * sin(α1)*w)/2
-    Ra = 0.453592 * Cs * (VA*cos(β))^2 * Sp * -sign(ut[1])*5
-    
-    
-    α = β - α1 # angle of sail to aparent wind
-    ρ = 1.225 #kg/m^3 Density of air
-    L = 1/2*ρ*VA^2*A*Cᴸ(α)
-    D = 1/2*ρ*VA^2*A*Cᴰ(α)
-    
-    F_T = sqrt(L^2 + D^2) # find total force on boat
-    F_LAT = -cos(β1-α1)*F_T #L*sin(α)-D*cos(α) #-cos(β1-α1)*F_T # find the amount pushing the boat to the side
-    F_R = sin(β1-α1)*F_T #L*cos(α)-D*sin(α) #sin(β1-α1)*F_T # find the amount pushing the boat forward
-    
-    
-    # Assume only 0% of the lateral force is contributing to the position
-    utt[1,1] = (F_R-Ra)*-cos(β1)/m #+ 0.00*(F_LAT+Ra_LAT)*-sin(β1)/m #  # change to global coodinates x 
-    utt[2,1] = (F_R-Ra)*sin(β1)/m*direct #- 0.00*(F_LAT+Ra_LAT)*cos(β1)/m*direct # change to global coodinates y
-end
+
 
 function def_constants()
     α_list = [10,20,30,40,50,60,70,80,90,100] .* pi ./ 180
@@ -71,7 +32,6 @@ function def_constants()
     m = 59 + 65*2 #kg
     ρ = 1.225 #kg/m^3 air density
 
-    
 
     # Create lift and drag coefficient arrays
     Cᴸ = Spline1D(α_list,Cᴸ_list)
@@ -88,9 +48,9 @@ function def_constants()
     h = h2 - h1 # Sail height
 
     ut_o = [0.0; 0.0]
-    t_int = 0.0:0.01:120
+    
 
-    return h, m, h1, h2, Cᴰ, Cᴸ, r_island, ut_o, t_int, A, h_avg, ρ
+    return w, h, m, h1, h2, Cᴰ, Cᴸ, r_island, ut_o, A, h_avg, ρ
 end
 
 function generate_wind(h1,h2,h_avg,r_island)
@@ -302,6 +262,57 @@ function def_callbacks()
     return cbs1, cbs2
 end
 
+function solve_boating(eq_motion, ut_o, u_o,package, t_int,cbs)
+    problem1 = SecondOrderODEProblem(eq_motion, ut_o, u_o, (t_int[1],t_int[end]),package)
+    solution1 = solve(problem1, DPRKN8() ,tstops=t_int,callback=cbs,save_everystep=true)
+    u = [(x->x[1]).(solution1.u), (x->x[2]).(solution1.u),(x->x[3]).(solution1.u),(x->x[4]).(solution1.u)];
+    t_ = solution1.t
+    t_β = saved_values1.t #retrieve tracked boat angle timestep
+    α1_list = (x->x[1]).(saved_values1.saveval) #retrieve tracked sail angle
+    β1_list = (x->x[2]).(saved_values1.saveval) #retrieve tracked boat angle
+    return u, t_, t_β, α1_list, β1_list
+end;
+
+function eq_motion(utt, ut, u, p, t)
+    
+    α1, α1_lst, β1, β1_lst, corner, VWx, VWy, m, h, w, A, Cᴰ, Cᴸ, corr_time, time, r_island, A = p 
+    # I know this is alot... Many are just needed for callbacks
+    
+    V_boat = sqrt(ut[1]^2 + ut[2]^2)
+    
+    γ = atan(VWy(u[1],u[2],t[1])/VWx(u[1],u[2],t[1])) # Angle of aperent wind to the base wind velocity 
+    # (island effects on wind angle)
+    
+    direct = sign(β1 + γ) # track if wind is hitting left side of boat or right side
+    β1 = abs(β1) # Tread both sides the same using the variable "direct" to correct values
+    
+    VA = sqrt((ut[2]-VWy(u[1],u[2],t[1]))^2 + (VWx(u[1],u[2],t[1])-ut[1])^2) #m/s Apparent Wind speed
+    θ = (γ + atan((ut[2]-VWy(u[1],u[2],t[1]))/(VWx(u[1],u[2],t[1])-ut[1])))*direct # Angle between wind and apparent wind
+    β = direct*(β1 - γ) - θ # Angle of boat to apparent wind
+    
+    # Not all diagrams show this resistance done below, so I am not 100% sure this is not taken into account 
+    # with lift and drag coefficients, but without some resistance, the boats 1 & 2 could catch Voyager 1 & 2
+    # https://smalltridesign.com/Trimaran-Articles/Boat-Resistance.html
+    Cs = 0.11
+    Sp = (h * sin(α1)*w)/2
+    Ra = 0.453592 * Cs * (VA*cos(β))^2 * Sp * -sign(ut[1])*5
+    
+    
+    α = β - α1 # angle of sail to aparent wind
+    ρ = 1.225 #kg/m^3 Density of air
+    L = 1/2*ρ*VA^2*A*Cᴸ(α)
+    D = 1/2*ρ*VA^2*A*Cᴰ(α)
+    
+    F_T = sqrt(L^2 + D^2) # find total force on boat
+    F_LAT = -cos(β1-α1)*F_T #L*sin(α)-D*cos(α) #-cos(β1-α1)*F_T # find the amount pushing the boat to the side
+    F_R = sin(β1-α1)*F_T #L*cos(α)-D*sin(α) #sin(β1-α1)*F_T # find the amount pushing the boat forward
+    
+    
+    # Assume only 0% of the lateral force is contributing to the position
+    utt[1,1] = (F_R-Ra)*-cos(β1)/m #+ 0.00*(F_LAT+Ra_LAT)*-sin(β1)/m #  # change to global coodinates x 
+    utt[2,1] = (F_R-Ra)*sin(β1)/m*direct #- 0.00*(F_LAT+Ra_LAT)*cos(β1)/m*direct # change to global coodinates y
+end
+
 # This may be able to be rewritten more compactly, but I kept modifying so it got a little out of hand with 
 # the input count
 function boatplot(u,ux,uy,utx,uty,β1,α1,index,scale,i,γ,VW,l_color,plt_name)
@@ -387,6 +398,8 @@ function anim_boat(u1,β1_1,α1_1,u2,β1_2,α1_2, VWx,VWy,VW, U, t_1, t_2,t_β1,
     end
     gif(anim, "Boat1.mp4",fps = fps)
 end;
+
+
 
 end # module
 
